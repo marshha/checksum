@@ -65,7 +65,7 @@ def parse_args():
 		dest="suffix",
 		default=None,
 		action="store",
-		help="Select the checksum file suffix. Default is the checksum algorithm")
+		help="Specify the checksum file suffix.")
 	verify_parser.add_argument("filepath",
 		default=None,
 		action="store",
@@ -194,10 +194,9 @@ def main():
 	if in_args.which == CHECKSUM_VERIFY:
 		if not in_args.suffix:
 			if not in_args.checksum_type:
-				print "Must specify one of --type or --suffix."
-				sys.exit(1)
-
-			in_args.checksum_type = CHECKSUM_TYPE_SHA1
+				print "INFO: --type and --suffix not specified, assuming type and suffix is sha1"
+				in_args.checksum_type = CHECKSUM_TYPE_SHA1
+				in_args.suffix = CHECKSUM_TYPE_SHA1
 
 		verify_checksums(in_args)
 
