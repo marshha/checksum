@@ -1,0 +1,124 @@
+#!/usr/bin/python -B
+import os
+import sys
+import hashlib
+import subprocess
+import argparse
+
+CHECKSUM_TYPE_MD5		= "md5"
+CHECKSUM_TYPE_SHA1		= "sha1"
+CHECKSUM_TYPE_SHA256	= "sha256"
+
+CHECKSUM_TYPES = [
+	CHECKSUM_TYPE_MD5,
+	CHECKSUM_TYPE_SHA1,
+	CHECKSUM_TYPE_SHA256,
+]
+
+CHECKSUM_GENERATE		= "generate"
+CHECKSUM_VERIFY			= "verify"
+
+def parse_args():
+	parser = argparse.ArgumentParser(description='File checksumming utilities')
+	subparsers = parser.add_subparsers()
+
+	gen_parser = subparsers.add_parser(CHECKSUM_GENERATE)
+	gen_parser.set_defaults(which=CHECKSUM_GENERATE)
+
+	verify_parser = subparsers.add_parser(CHECKSUM_VERIFY)
+	verify_parser.set_defaults(which=CHECKSUM_VERIFY)
+
+	gen_parser.add_argument("--type",
+		dest="checksum_type",
+		default=CHECKSUM_TYPE_SHA1,
+		choices=CHECKSUM_TYPES,
+		action="store",
+		help="Select a checksum algorithm")
+	gen_parser.add_argument("--suffix",
+		dest="suffix",
+		default=None,
+		action="store",
+		help="Select the checksum file suffix. Default is the checksum algorithm")
+	gen_parser.add_argument("filepath",
+		default=None,
+		action="store",
+		nargs='+',
+		help="Filename or directory to checksum")
+
+	return parser.parse_args()
+
+def hash_func(filepath, checksum_type):
+	HASHLIB_FUNCS = {
+		CHECKSUM_TYPE_MD5:		hashlib.md5,
+		CHECKSUM_TYPE_SHA1:		hashlib.sha1,
+		CHECKSUM_TYPE_SHA256:	hashlib.sha256,
+	}
+
+	CHUNK_SIZE					= 4096
+
+	hasher = HASHLIB_FUNCS[checksum_type]()
+
+	with open(filepath, "rb") as fp:
+		for chunk in iter(lambda: fp.read(CHUNK_SIZE), b""):
+			hasher.update(chunk)
+
+	return hasher.hexdigest()
+
+def generate_checksum_file(filepath, checksum_type, suffix):
+	checksum_val = hash_func(filepath, checksum_type)
+	out_fpath = checksum_file_name(filepath, suffix)
+
+	with open(out_fpath, 'w') as fp:
+		fp.write(checksum_val)
+
+def checksum_suffix(in_args):
+	if in_args.suffix:
+		return in_args.suffix
+
+	return in_args.checksum_type
+
+def checksum_file_name(filepath, suffix):
+	out_fname = "%s.%s" % (os.path.basename(filepath), suffix)
+	out_fpath = os.path.join(os.path.dirname(filepath), out_fname)
+	return out_fpath
+
+def file_is_checksum(filepath, suffix):
+	if filepath.endswith(".%s" % (suffix,)):
+		return True
+
+	return False
+
+def generate_checksums(in_args):
+	suffix = checksum_suffix(in_args)
+
+	for filepath in in_args.filepath:
+		if os.path.isfile(filepath):
+			if file_is_checksum(filepath, suffix):
+				continue
+			generate_checksum_file(filepath, in_args.checksum_type, suffix)
+
+		elif os.path.isdir(filepath):
+			for path, subdirs, filelist in os.walk(filepath):
+				for fname in filelist:
+					fpath = os.path.join(path, fname)
+					if file_is_checksum(fpath, suffix):
+						continue
+
+					generate_checksum_file(fpath, in_args.checksum_type, suffix)
+
+	return		
+
+def main():
+	in_args = parse_args()
+	print in_args
+
+	if in_args.which == CHECKSUM_GENERATE:
+		generate_checksums(in_args)
+
+	if in_args.which == CHECKSUM_VERIFY:
+		verify_checksums(in_args)
+
+	return
+
+if __name__ == "__main__":
+	main()
