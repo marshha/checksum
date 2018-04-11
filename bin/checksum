@@ -9,11 +9,21 @@ CHECKSUM_TYPE_MD5		= "md5"
 CHECKSUM_TYPE_SHA1		= "sha1"
 CHECKSUM_TYPE_SHA256	= "sha256"
 
+CHECKSUM_BYTES_MD5		= 32
+CHECKSUM_BYTES_SHA1		= 40
+CHECKSUM_BYTES_SHA256	= 64
+
 CHECKSUM_TYPES = [
 	CHECKSUM_TYPE_MD5,
 	CHECKSUM_TYPE_SHA1,
 	CHECKSUM_TYPE_SHA256,
 ]
+
+CHECKSUM_BYTES = {
+	CHECKSUM_BYTES_MD5:		CHECKSUM_TYPE_MD5,
+	CHECKSUM_BYTES_SHA1:	CHECKSUM_TYPE_SHA1,
+	CHECKSUM_BYTES_SHA256:	CHECKSUM_TYPE_SHA256,
+}
 
 CHECKSUM_GENERATE		= "generate"
 CHECKSUM_VERIFY			= "verify"
@@ -24,9 +34,6 @@ def parse_args():
 
 	gen_parser = subparsers.add_parser(CHECKSUM_GENERATE)
 	gen_parser.set_defaults(which=CHECKSUM_GENERATE)
-
-	verify_parser = subparsers.add_parser(CHECKSUM_VERIFY)
-	verify_parser.set_defaults(which=CHECKSUM_VERIFY)
 
 	gen_parser.add_argument("--type",
 		dest="checksum_type",
@@ -44,6 +51,27 @@ def parse_args():
 		action="store",
 		nargs='+',
 		help="Filename or directory to checksum")
+
+	verify_parser = subparsers.add_parser(CHECKSUM_VERIFY)
+	verify_parser.set_defaults(which=CHECKSUM_VERIFY)
+
+	verify_parser.add_argument("--type",
+		dest="checksum_type",
+		default=None,
+		choices=CHECKSUM_TYPES,
+		action="store",
+		help="Select a checksum algorithm or attempt to autodetect by specifying a suffix.")
+	verify_parser.add_argument("--suffix",
+		dest="suffix",
+		default=None,
+		action="store",
+		help="Select the checksum file suffix. Default is the checksum algorithm")
+	verify_parser.add_argument("filepath",
+		default=None,
+		action="store",
+		nargs='+',
+		help="Filename or directory to checksum")
+
 
 	return parser.parse_args()
 
@@ -95,6 +123,7 @@ def generate_checksums(in_args):
 		if os.path.isfile(filepath):
 			if file_is_checksum(filepath, suffix):
 				continue
+
 			generate_checksum_file(filepath, in_args.checksum_type, suffix)
 
 		elif os.path.isdir(filepath):
@@ -108,14 +137,68 @@ def generate_checksums(in_args):
 
 	return		
 
+def autodetect_checksum_type(checksum_from_file):
+	checksum_len = len(checksum_from_file)
+	checksum_type = CHECKSUM_BYTES.get(checksum_len)
+
+	return checksum_type
+
+def verify_checksum_file(filepath, checksum_type, suffix):
+	checksum_fpath = checksum_file_name(filepath, suffix)
+
+	with open(checksum_fpath, 'r') as fp:
+		checksum_from_file = fp.read().strip()
+
+	if not checksum_type:
+		checksum_type = autodetect_checksum_type(checksum_from_file)
+
+	checksum_val = hash_func(filepath, checksum_type)
+
+	if checksum_val == checksum_from_file:
+		return True
+
+	report_verify_failed(filepath, checksum_val, checksum_from_file, checksum_type)
+	return False
+
+def report_verify_failed(filepath, checksum_val, checksum_from_file, checksum_type):
+	print "FAILED:%s %s:%s expected:%s" % (
+		filepath, checksum_type, checksum_val, checksum_from_file)
+
+def verify_checksums(in_args):
+	suffix = checksum_suffix(in_args)
+
+	for filepath in in_args.filepath:
+		if os.path.isfile(filepath):
+			if file_is_checksum(filepath, suffix):
+				continue
+
+			verify_checksum_file(filepath, in_args.checksum_type, suffix)
+
+		elif os.path.isdir(filepath):
+			for path, subdirs, filelist in os.walk(filepath):
+				for fname in filelist:
+					fpath = os.path.join(path, fname)
+					if file_is_checksum(fpath, suffix):
+						continue
+
+					verify_checksum_file(fpath, in_args.checksum_type, suffix)
+
+	return		
+
 def main():
 	in_args = parse_args()
-	print in_args
 
 	if in_args.which == CHECKSUM_GENERATE:
 		generate_checksums(in_args)
 
 	if in_args.which == CHECKSUM_VERIFY:
+		if not in_args.suffix:
+			if not in_args.checksum_type:
+				print "Must specify one of --type or --suffix."
+				sys.exit(1)
+
+			in_args.checksum_type = CHECKSUM_TYPE_SHA1
+
 		verify_checksums(in_args)
 
 	return
